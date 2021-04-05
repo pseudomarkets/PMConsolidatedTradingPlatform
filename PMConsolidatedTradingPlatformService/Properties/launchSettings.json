@@ -1,0 +1,10 @@
+﻿{
+  "profiles": {
+    "PMConsolidatedTradingPlatformService": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
