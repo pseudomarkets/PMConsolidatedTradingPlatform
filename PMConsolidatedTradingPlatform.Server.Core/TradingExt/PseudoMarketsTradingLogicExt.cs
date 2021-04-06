@@ -30,5 +30,10 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingExt
         {
             return existingPosition.Quantity - orderQuantity == 0;
         }
+
+        public static double CalculateOrderMarketValue(this Orders order)
+        {
+            return order.Quantity * order.Price;
+        }
     }
 }

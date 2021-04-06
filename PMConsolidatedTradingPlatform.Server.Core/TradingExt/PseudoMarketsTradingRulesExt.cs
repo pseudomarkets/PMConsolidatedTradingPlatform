@@ -10,14 +10,14 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingExt
     {
         public static bool IsOrderValid(this ConsolidatedTradeRequest tradeRequest)
         {
-            return tradeRequest?.Quantity > 0 &&
+            return ((tradeRequest?.Quantity > 0 && (tradeRequest?.OrderAction == "BUY" || tradeRequest?.OrderAction == "SELL")) || tradeRequest?.Quantity < 0 && tradeRequest?.OrderAction == "SHORTSELL") &&
                    tradeRequest?.OrderType == ConsolidatedTradeEnums.ConsolidatedOrderType.Limit ||
                    tradeRequest?.OrderType == ConsolidatedTradeEnums.ConsolidatedOrderType.Market ||
                    tradeRequest?.OrderType == ConsolidatedTradeEnums.ConsolidatedOrderType.Stop ||
                    tradeRequest?.OrderType == ConsolidatedTradeEnums.ConsolidatedOrderType.StopLimit &&
                    tradeRequest?.OrderTiming == ConsolidatedTradeEnums.ConsolidatedOrderTiming.DayOnly ||
                    tradeRequest?.OrderTiming == ConsolidatedTradeEnums.ConsolidatedOrderTiming.AfterHours ||
-                   tradeRequest?.OrderAction == "BUY" || tradeRequest.OrderAction == "SELL" ||
+                   tradeRequest?.OrderAction == "BUY" || tradeRequest?.OrderAction == "SELL" ||
                    tradeRequest?.OrderAction == "SELLSHORT";
         }
 

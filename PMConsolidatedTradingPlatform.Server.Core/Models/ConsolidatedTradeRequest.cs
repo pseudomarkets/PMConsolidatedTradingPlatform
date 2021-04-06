@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 using MessagePack;
+using PMUnifiedAPI.Models;
 
 namespace PMConsolidatedTradingPlatform.Server.Core.Models
 {
@@ -27,6 +28,6 @@ namespace PMConsolidatedTradingPlatform.Server.Core.Models
         public ConsolidatedTradeEnums.ConsolidatedOrderOrigin OrderOrigin { get; set; }
 
         [Key(6)]
-        public int AccountId { get; set; }
+        public Accounts Account { get; set; }
     }
 }

@@ -13,8 +13,10 @@ using PMMarketDataService.DataProvider.Client.Implementation;
 using PMMarketDataService.DataProvider.Client.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using PMCommonEntities.Models;
 using PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Interfaces;
 using PMConsolidatedTradingPlatform.Server.Core.TradingExt;
+using PMUnifiedAPI.Models;
 
 namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
 {
@@ -23,7 +25,7 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
         private MarketDataServiceClient _marketDataServiceClient;
         private NetMqService _netMqService;
         private RelationalDataStoreRepository _relationalDataStoreRepository;
-        private ConsolidatedTradeEnums.OrderPostingSystem _orderPostingSystem;
+        private ConsolidatedTradeEnums.DataStore _dataStore;
 
         public PseudoMarketsTradingService(IConfigurationRoot config)
         {
@@ -33,8 +35,8 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
                 config.GetSection("MarketDataService:Password")?.Value,
                 config.GetSection("MarketDataService:BaseUrl")?.Value);
 
-            _orderPostingSystem =
-                Enum.Parse<ConsolidatedTradeEnums.OrderPostingSystem>(config.GetSection("ServiceConfig:OrderPosting")
+            _dataStore =
+                Enum.Parse<ConsolidatedTradeEnums.DataStore>(config.GetSection("ServiceConfig:OrderPosting")
                     ?.Value); 
 
             ConfigureServices(new ServiceCollection(), config.GetSection("RelationalDataStore:PseudoMarketsDb")?.Value);
@@ -73,11 +75,11 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
         public ConsolidatedTradeResponse ProcessPseudoMarketsOrder(ConsolidatedTradeRequest order)
         {
 
-            switch (_orderPostingSystem)
+            switch (_dataStore)
             {
-                case ConsolidatedTradeEnums.OrderPostingSystem.Legacy:
+                case ConsolidatedTradeEnums.DataStore.Legacy:
                     break;
-                case ConsolidatedTradeEnums.OrderPostingSystem.RealTime:
+                case ConsolidatedTradeEnums.DataStore.RealTime:
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -92,13 +94,29 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
 
             if (order.IsOrderValid())
             {
-                var account = await _relationalDataStoreRepository.GetAccountUsingId(order.AccountId);
+                var account = order.Account;
 
                 if (account != null)
                 {
                     var quote = await _marketDataServiceClient.GetLatestPrice(order?.Symbol);
                     if (account.DoesAccountHaveSufficientFundsFor(order.Quantity, quote.price))
                     {
+                        var transaction = await _relationalDataStoreRepository.CreateAndSaveTransaction(account.Id,
+                            RDSEnums.EnvironmentId.ProductionPrimary, RDSEnums.OriginId.PseudoMarkets);
+
+                        var dbOrder= await _relationalDataStoreRepository.CreateAndSaveOrder(order.Symbol, order.OrderAction,
+                            quote.price, order.Quantity, DateTime.Now, transaction.TransactionId,
+                            RDSEnums.EnvironmentId.ProductionPrimary, RDSEnums.OriginId.PseudoMarkets,
+                            RDSEnums.SecurityType.RealWorld);
+
+                        switch (order.OrderAction)
+                        {
+                            case "BUY":
+                                await ProcessBuySideLegacyTransaction(account, dbOrder);
+                                break;
+                            default:
+                                break;
+                        }
 
                     }
                 }
@@ -107,14 +125,66 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
             return response;
         }
 
+        private async Task ProcessBuySideLegacyTransaction(Accounts account, Orders order)
+        {
+            // Check if account is holding an existing position
+            var existingPosition = await _relationalDataStoreRepository.CheckAndGetExistingPosition(account, order.Symbol);
+
+            var marketValue = order.CalculateOrderMarketValue();
+
+            if (existingPosition != null)
+            {
+                // Existing Long Position
+                if (existingPosition.Quantity > 0)
+                {
+                    var newValue = existingPosition.Value + marketValue;
+                    var newQuantity = existingPosition.Quantity + order.Quantity;
+
+                    var newBalance = account.Balance - marketValue;
+
+                    await _relationalDataStoreRepository.UpdatePosition(existingPosition, newValue, newQuantity,
+                        account, newBalance);
+
+                }
+                // Existing Short Position
+                else
+                {
+                    // Liquidating short position
+                    if (Math.Abs(existingPosition.Quantity) == order.Quantity)
+                    {
+
+                    }
+                    // Increasing stake in short position
+                    else
+                    {
+                        
+                    }
+                }
+            }
+            // New position
+            else
+            {
+                
+            }
+        }
+
+        private async Task ProcessSellSideLegacyTransaction(Accounts account, Orders order)
+        {
+
+        }
+
+        private async Task ProcessShortSellSideLegacyTransaction(Accounts account, Orders order)
+        {
+
+        }
 
         public void PostOrderResult(ConsolidatedTradeResponse tradeResponse)
         {
-            switch (_orderPostingSystem)
+            switch (_dataStore)
             {
-                case ConsolidatedTradeEnums.OrderPostingSystem.Legacy:
+                case ConsolidatedTradeEnums.DataStore.Legacy:
                     break;
-                case ConsolidatedTradeEnums.OrderPostingSystem.RealTime:
+                case ConsolidatedTradeEnums.DataStore.RealTime:
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
