@@ -21,7 +21,7 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implemen
             _dbContext = dbContext;
         }
 
-        public async Task<Orders> CreateAndSaveOrder(string symbol, string type, double price, int quantity, DateTime date, string transactionId, RDSEnums.EnvironmentId environmentId, RDSEnums.OriginId originId, RDSEnums.SecurityType securityType)
+        public async Task<Orders> CreateOrder(string symbol, string type, double price, int quantity, DateTime date, string transactionId, RDSEnums.EnvironmentId environmentId, RDSEnums.OriginId originId, RDSEnums.SecurityType securityType)
         {
             Orders order = new Orders
             {
@@ -41,8 +41,8 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implemen
 
             return order;
         }
-
-        public async Task<Transactions> CreateAndSaveTransaction(int accountId, RDSEnums.EnvironmentId environmentId,
+        
+        public async Task<Transactions> CreateTransaction(int accountId, RDSEnums.EnvironmentId environmentId,
             RDSEnums.OriginId originId)
         {
             var transaction = new Transactions()
@@ -58,23 +58,12 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implemen
 
             return transaction;
         }
-
-        public async Task SaveTransaction(Transactions transaction)
-        {
-            _dbContext.Transactions.Add(transaction);
-            await _dbContext.SaveChangesAsync();
-        }
-
+        
         public async Task<Positions> CheckAndGetExistingPosition(Accounts account, string symbol)
         {
             return _dbContext.Positions.GetExistingPositionFor(account, symbol);
         }
-
-        public async Task SavePosition(Positions position, Accounts account)
-        {
-            throw new NotImplementedException();
-        }
-
+        
         public async Task UpdatePosition(Positions existingPosition, double newValue, int newQuantity, Accounts account, double newAccountBalance)
         {
             existingPosition.Value = newValue;
@@ -86,6 +75,34 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implemen
             _dbContext.Entry(account).State = EntityState.Modified;
 
             await _dbContext.SaveChangesAsync();
+        }
+
+        public async Task LiquidatePosition(Positions existingPosition, Accounts account, double newBalance)
+        {
+            _dbContext.Entry(existingPosition).State = EntityState.Deleted;
+            account.Balance = newBalance;
+
+            await _dbContext.SaveChangesAsync();
+        }
+
+        public async Task CreatePosition(Positions newPosition, Accounts account, double newBalance)
+        {
+            _dbContext.Positions.Add(newPosition);
+            account.Balance = newBalance;
+            _dbContext.Entry(account).State = EntityState.Modified;
+
+            await _dbContext.SaveChangesAsync();
+        }
+
+        public async Task DeleteInvalidOrder(Orders invalidOrder)
+        {
+            _dbContext.Entry(invalidOrder).State = EntityState.Deleted;
+            await _dbContext.SaveChangesAsync();
+        }
+
+        public async Task<Orders> GetOrderUsingTransactionId(string transactionId)
+        {
+            return _dbContext.Orders.FirstOrDefault(x => x.TransactionID == transactionId);
         }
 
         public async Task CreateQueuedOrder(TradeExecInput tradeInput, Accounts account)

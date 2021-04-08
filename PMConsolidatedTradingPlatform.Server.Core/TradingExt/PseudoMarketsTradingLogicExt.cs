@@ -9,12 +9,6 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingExt
 {
     public static class PseudoMarketsTradingLogicExt
     {
-        public static bool DoesAccountHaveExistingPosition(this DbSet<Positions> positionsTable, Accounts account,
-            string symbol)
-        {
-            return positionsTable.Any(x => x.AccountId == account.Id && x.Symbol == symbol);
-        }
-
         public static Positions GetExistingPositionFor(this DbSet<Positions> positionsTable, Accounts account,
             string symbol)
         {
@@ -26,11 +20,16 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingExt
             return position.Quantity > 0;
         }
 
+        public static bool IsPositionShort(this Positions position)
+        {
+            return position.Quantity < 0;
+        }
+
         public static bool IsLiquidatingPosition(this Positions existingPosition, int orderQuantity)
         {
             return existingPosition.Quantity - orderQuantity == 0;
         }
-
+        
         public static double CalculateOrderMarketValue(this Orders order)
         {
             return order.Quantity * order.Price;

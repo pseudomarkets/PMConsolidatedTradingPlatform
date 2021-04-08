@@ -29,7 +29,8 @@ namespace PMConsolidatedTradingPlatform.Server.Core.Models
         public enum DataStore
         {
             Legacy,
-            RealTime
+            RealTime,
+            Dual
         }
     }
 }

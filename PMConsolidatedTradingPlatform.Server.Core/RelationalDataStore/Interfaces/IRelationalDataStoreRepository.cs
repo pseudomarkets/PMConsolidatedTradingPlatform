@@ -10,20 +10,26 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Interfac
 {
     public interface IRelationalDataStoreRepository
     {
-        Task<Orders> CreateAndSaveOrder(string symbol, string type, double price, int quantity, DateTime date,
+        Task<Orders> CreateOrder(string symbol, string type, double price, int quantity, DateTime date,
             string transactionId, RDSEnums.EnvironmentId environmentId, RDSEnums.OriginId originId,
             RDSEnums.SecurityType securityType);
-        Task SaveTransaction(Transactions transaction);
-        Task SavePosition(Positions position, Accounts account);
-
+        
         Task UpdatePosition(Positions existingPosition, double newValue, int newQuantity, Accounts account,
             double newAccountBalance);
 
         Task CreateQueuedOrder(TradeExecInput tradeInput, Accounts account);
         Task<Accounts> GetAccountUsingId(int accountId);
-        Task<Transactions> CreateAndSaveTransaction(int accountId, RDSEnums.EnvironmentId environmentId,
+        Task<Transactions> CreateTransaction(int accountId, RDSEnums.EnvironmentId environmentId,
             RDSEnums.OriginId originId);
 
         Task<Positions> CheckAndGetExistingPosition(Accounts account, string symbol);
+
+        Task LiquidatePosition(Positions existingPosition, Accounts account, double newBalance);
+
+        Task<Orders> GetOrderUsingTransactionId(string transactionId);
+
+        Task CreatePosition(Positions newPosition, Accounts account, double newBalance);
+
+        Task DeleteInvalidOrder(Orders invalidOrder);
     }
 }
