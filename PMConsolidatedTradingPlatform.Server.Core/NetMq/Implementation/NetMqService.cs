@@ -11,10 +11,12 @@ namespace PMConsolidatedTradingPlatform.Server.Core.NetMq.Implementation
     public class NetMqService : INetMqService
     {
         private readonly ResponseSocket _netMqConnection;
-
+        private readonly string _netMqConnectionString;
+        
         public NetMqService(string netMqConnectionString)
         {
-            _netMqConnection = new ResponseSocket(netMqConnectionString);
+            _netMqConnectionString = netMqConnectionString;
+            _netMqConnection = new ResponseSocket(_netMqConnectionString);
         }
 
         public T GetMessage<T>()
@@ -29,8 +31,18 @@ namespace PMConsolidatedTradingPlatform.Server.Core.NetMq.Implementation
         public void SendMessage<T>(T message)
         {
             var outboundMessage = MessagePackSerializer.Serialize<T>(message);
-
+            
             _netMqConnection.SendFrame(outboundMessage);
+        }
+
+        public void Disconnect()
+        {
+            _netMqConnection.Disconnect(_netMqConnectionString);
+        }
+
+        public void Reconnect()
+        {
+            _netMqConnection.Connect(_netMqConnectionString);
         }
     }
 }

@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using PMCommonApiModels.ResponseModels;
 using PMCommonEntities.Models;
 using PMConsolidatedTradingPlatform.Server.Core.Models;
@@ -23,21 +24,25 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
         private NetMqService _netMqService;
         private RelationalDataStoreRepository _relationalDataStoreRepository;
         private ConsolidatedTradeEnums.DataStore _dataStore;
+        private readonly ILogger<TradingPlatformLogger> _logger;
 
-        public PseudoMarketsTradingService(IConfigurationRoot config)
+        public PseudoMarketsTradingService(IConfigurationRoot config, ILogger<TradingPlatformLogger> logger)
         {
-            _netMqService = new NetMqService(config.GetSection("NetMqConfig:PseudoMarketsMq")?.Value);
+            var tradingPlatformConfig = config.GetSection("TradingPlatformConfig");
+            _netMqService = new NetMqService(tradingPlatformConfig.GetSection("NetMqConfig:PseudoMarketsMq")?.Value);
             _marketDataServiceClient = new MarketDataServiceClient(new HttpClient(),
-                config.GetSection("MarketDataService:Username")?.Value,
-                config.GetSection("MarketDataService:Password")?.Value,
-                config.GetSection("MarketDataService:BaseUrl")?.Value);
+                tradingPlatformConfig.GetSection("MarketDataService:Username")?.Value,
+                tradingPlatformConfig.GetSection("MarketDataService:Password")?.Value,
+                tradingPlatformConfig.GetSection("MarketDataService:BaseUrl")?.Value);
 
             _dataStore =
-                Enum.Parse<ConsolidatedTradeEnums.DataStore>(config.GetSection("ServiceConfig:OrderPosting")
-                    ?.Value); 
+                Enum.Parse<ConsolidatedTradeEnums.DataStore>(tradingPlatformConfig.GetSection("ServiceConfig:OrderPosting")
+                    ?.Value);
 
-            ConfigureServices(new ServiceCollection(), config.GetSection("RelationalDataStore:PseudoMarketsDb")?.Value, _dataStore);
-
+            _logger = logger;
+            
+            ConfigureServices(new ServiceCollection(), tradingPlatformConfig.GetSection("RelationalDataStore:PseudoMarketsDb")?.Value, _dataStore);
+            _logger.LogInformation("Services configured");
         }
 
         private void ConfigureServices(IServiceCollection services, string connectionString, ConsolidatedTradeEnums.DataStore dataStore)
@@ -52,6 +57,9 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
 
                     services.AddScoped<IRelationalDataStoreRepository, RelationalDataStoreRepository>(rds =>
                         new RelationalDataStoreRepository(context));
+                    
+                    _logger.LogInformation($"Connected to Relational Data Store via connection {connectionString}");
+                    
                     break;
                 case ConsolidatedTradeEnums.DataStore.RealTime:
                     break;
@@ -60,21 +68,31 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
             }
         }
 
-        public async void ProcessIncomingOrder()
+        public async Task ProcessIncomingOrder()
         {
-            var inboundOrder = _netMqService.GetMessage<ConsolidatedTradeRequest>();
-            
-            switch (inboundOrder.OrderOrigin)
+            try
             {
-                case ConsolidatedTradeEnums.ConsolidatedOrderOrigin.PseudoMarkets:
-                    var orderResult = await ProcessPseudoMarketsOrder(inboundOrder);
-                    PostOrderResult(orderResult);
-                    break;
-                case ConsolidatedTradeEnums.ConsolidatedOrderOrigin.PseudoXchange:
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
+                var inboundOrder = _netMqService.GetMessage<ConsolidatedTradeRequest>();
+            
+                _logger.LogInformation($"Processing incoming order from origin {inboundOrder.OrderOrigin}");
+            
+                switch (inboundOrder?.OrderOrigin)
+                {
+                    case ConsolidatedTradeEnums.ConsolidatedOrderOrigin.PseudoMarkets:
+                        var orderResult = await ProcessPseudoMarketsOrder(inboundOrder);
+                        PostOrderResult(orderResult);
+                        break;
+                    case ConsolidatedTradeEnums.ConsolidatedOrderOrigin.PseudoXchange:
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
             }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error processing inbound order from MQ");
+            }
+
         }
 
         private async Task<ConsolidatedTradeResponse> ProcessPseudoMarketsOrder(ConsolidatedTradeRequest order)
@@ -82,6 +100,7 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
             switch (_dataStore)
             {
                 case ConsolidatedTradeEnums.DataStore.Legacy:
+                    _logger.LogInformation($"Processing Order via Legacy Posting for account: {order.AccountId}");
                     var orderResult = await ProcessAndPostLegacyOrder(order);
                     return orderResult;
                     break;
@@ -95,45 +114,93 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
         private async Task<ConsolidatedTradeResponse> ProcessAndPostLegacyOrder(ConsolidatedTradeRequest order)
         {
             ConsolidatedTradeResponse response = new ConsolidatedTradeResponse();
-
-            if (order.IsOrderValid())
+            
+            try
             {
-                var account = order.Account;
-
-                if (account != null)
+                if (order != null && order.IsOrderValid())
                 {
-                    var quote = await _marketDataServiceClient.GetLatestPrice(order?.Symbol);
-                    if (account.DoesAccountHaveSufficientFundsFor(order.Quantity, quote.price))
+                    var account = await _relationalDataStoreRepository.GetAccountUsingId(order.AccountId);
+
+                    if (account != null)
                     {
-                        var transaction = await _relationalDataStoreRepository.CreateTransaction(account.Id,
-                            RDSEnums.EnvironmentId.ProductionPrimary, RDSEnums.OriginId.PseudoMarkets);
-
-                        await _relationalDataStoreRepository.CreateOrder(order.Symbol, order.OrderAction,
-                            quote.price, order.Quantity, DateTime.Now, transaction.TransactionId,
-                            RDSEnums.EnvironmentId.ProductionPrimary, RDSEnums.OriginId.PseudoMarkets,
-                            RDSEnums.SecurityType.RealWorld);
-
-                        var orderFromTransactionId =
-                            await _relationalDataStoreRepository.GetOrderUsingTransactionId(transaction.TransactionId);
-
-                        switch (order.OrderAction)
+                        var quote = await _marketDataServiceClient.GetLatestPrice(order?.Symbol);
+                        if (account.DoesAccountHaveSufficientFundsFor(order.Quantity, quote.price))
                         {
-                            case "BUY":
-                                var buySideResult = await ProcessBuySideLegacyTransaction(account, orderFromTransactionId);
-                                response.Order = buySideResult.Order;
-                                response.StatusCode = buySideResult.StatusCode;
-                                response.StatusMessage = buySideResult.Status;
-                                return response;
+                            var transaction = await _relationalDataStoreRepository.CreateTransaction(account.Id,
+                                RDSEnums.EnvironmentId.ProductionPrimary, RDSEnums.OriginId.PseudoMarkets);
+                        
+                            _logger.LogInformation($"Transaction Created with ID: {transaction.TransactionId}");
+
+                            await _relationalDataStoreRepository.CreateOrder(order.Symbol, order.OrderAction,
+                                quote.price, order.Quantity, DateTime.Now, transaction.TransactionId,
+                                RDSEnums.EnvironmentId.ProductionPrimary, RDSEnums.OriginId.PseudoMarkets,
+                                RDSEnums.SecurityType.RealWorld);
+                        
+                            _logger.LogInformation($"Order inserted into Relational Data Store");
+
+                            var orderFromTransactionId =
+                                await _relationalDataStoreRepository.GetOrderUsingTransactionId(transaction.TransactionId);
+
+                            switch (order.OrderAction)
+                            {
+                                case "BUY":
+                                    _logger.LogInformation("Processing buy side order");
+                                    var buySideResult = await ProcessBuySideLegacyTransaction(account, orderFromTransactionId);
+                                    response.Order = buySideResult.Order;
+                                    response.StatusCode = buySideResult.StatusCode;
+                                    response.StatusMessage = buySideResult.Status;
+                                    return response;
+                                case "SELL":
+                                    _logger.LogInformation("Processing sell side order");
+                                    var sellSideResult =
+                                        await ProcessSellSideLegacyTransaction(account, orderFromTransactionId);
+                                    response.Order = sellSideResult.Order;
+                                    response.StatusCode = sellSideResult.StatusCode;
+                                    response.StatusMessage = sellSideResult.Status;
+                                    return response;
+                                case "SELLSHORT":
+                                    _logger.LogInformation("Processing short-sell side order");
+                                    var shortSellSideResult =
+                                        await ProcessShortSellSideLegacyTransaction(account, orderFromTransactionId);
+                                    response.Order = shortSellSideResult.Order;
+                                    response.StatusCode = shortSellSideResult.StatusCode;
+                                    response.StatusMessage = shortSellSideResult.Status;
+                                    return response;
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogInformation($"Insufficient balance for Account ID: {account.Id} with balance of {account.Balance} and order value of {order.Quantity * quote.price}");
+                            response.StatusMessage = StatusMessages.InsufficientBalanceMessage;
+                            response.StatusCode = TradeStatusCodes.ExecutionError;
+                            response.Order = null;
                         }
                     }
                     else
                     {
-                        response.StatusMessage = StatusMessages.InsufficientBalanceMessage;
+                        _logger.LogInformation("Failed to get account");
+                        response.StatusMessage = "Invalid account";
                         response.StatusCode = TradeStatusCodes.ExecutionError;
+                        response.Order = null;
                     }
                 }
+                else
+                {
+                    _logger.LogInformation("Trade rules validation failed for order");
+                    response.StatusMessage = $"{StatusMessages.InvalidSymbolOrQuantityMessage} and/or {StatusMessages.InvalidOrderTypeMessage}";
+                    response.StatusCode = TradeStatusCodes.ExecutionError;
+                    response.Order = null;
+                }
             }
-
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error in processing legacy order and transaction posting");
+                response.Order = null;
+                response.StatusMessage = StatusMessages.FailureMessage;
+                response.StatusCode = TradeStatusCodes.ExecutionError;
+                
+            }
+            
             return response;
         }
 
@@ -256,10 +323,47 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
 
             if (existingPosition != null)
             {
-                
-            }
+                if (existingPosition.IsPositionLong())
+                {
+                    await _relationalDataStoreRepository.DeleteInvalidOrder(order);
+                    return (null, StatusMessages.InvalidShortPositionMessage, TradeStatusCodes.ExecutionError);
+                }
+                else if (existingPosition.IsPositionShort())
+                {
+                    var newValue = existingPosition.Value + marketValue;
+                    var newQuantity = existingPosition.Quantity + (Math.Abs(order.Quantity) * -1);
 
-            return default;
+                    var newBalance = account.Balance - marketValue;
+
+                    await _relationalDataStoreRepository.UpdatePosition(existingPosition, newValue, newQuantity, account,
+                        newBalance);
+
+                    return (order, StatusMessages.SuccessMessage, TradeStatusCodes.ExecutionOk);
+                }
+                else
+                {
+                    // Invalid order type if short-selling against an existing position that is not long or short
+                    return (null, StatusMessages.InvalidOrderTypeMessage, TradeStatusCodes.ExecutionError);
+                }
+            } // Create new short position
+            else
+            {
+                Positions newPosition = new Positions()
+                {
+                    AccountId = account.Id,
+                    OrderId = order.Id,
+                    Symbol = order.Symbol,
+                    Quantity = Math.Abs(order.Quantity) * -1,
+                    EnvironmentId = RDSEnums.EnvironmentId.ProductionPrimary,
+                    OriginId = RDSEnums.OriginId.PseudoMarkets,
+                    SecurityTypeId = RDSEnums.SecurityType.RealWorld
+                };
+
+                var newBalance = account.Balance - marketValue;
+                await _relationalDataStoreRepository.CreatePosition(newPosition, account, newBalance);
+
+                return (order, StatusMessages.SuccessMessage, TradeStatusCodes.ExecutionOk);
+            }
         }
 
         public void PostOrderResult(ConsolidatedTradeResponse tradeResponse)
@@ -267,6 +371,9 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
             switch (_dataStore)
             {
                 case ConsolidatedTradeEnums.DataStore.Legacy:
+                    _logger.LogInformation($"Posting trade response from Legacy Posting for Order ID: {tradeResponse.Order.Id}");
+                    _netMqService.SendMessage(tradeResponse);
+                    _logger.LogInformation($"Trade response sent for Order ID: {tradeResponse.Order.Id}");
                     break;
                 case ConsolidatedTradeEnums.DataStore.RealTime:
                     break;

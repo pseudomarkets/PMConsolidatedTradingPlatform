@@ -61,7 +61,7 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implemen
         
         public async Task<Positions> CheckAndGetExistingPosition(Accounts account, string symbol)
         {
-            return _dbContext.Positions.GetExistingPositionFor(account, symbol);
+            return _dbContext.Positions.FirstOrDefault(x => x.AccountId == account.Id && x.Symbol == symbol);
         }
         
         public async Task UpdatePosition(Positions existingPosition, double newValue, int newQuantity, Accounts account, double newAccountBalance)

@@ -9,12 +9,6 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingExt
 {
     public static class PseudoMarketsTradingLogicExt
     {
-        public static Positions GetExistingPositionFor(this DbSet<Positions> positionsTable, Accounts account,
-            string symbol)
-        {
-            return positionsTable.FirstOrDefault(x => x.AccountId == account.Id && x.Symbol == symbol);
-        }
-
         public static bool IsPositionLong(this Positions position)
         {
             return position.Quantity > 0;

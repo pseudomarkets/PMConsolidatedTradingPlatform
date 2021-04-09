@@ -28,6 +28,6 @@ namespace PMConsolidatedTradingPlatform.Server.Core.Models
         public ConsolidatedTradeEnums.ConsolidatedOrderOrigin OrderOrigin { get; set; }
 
         [Key(6)]
-        public Accounts Account { get; set; }
+        public int AccountId { get; set; }
     }
 }

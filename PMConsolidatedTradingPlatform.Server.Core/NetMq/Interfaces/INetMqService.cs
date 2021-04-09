@@ -9,5 +9,7 @@ namespace PMConsolidatedTradingPlatform.Server.Core.NetMq.Interfaces
     {
         T GetMessage<T>();
         void SendMessage<T>(T message);
+        void Disconnect();
+        void Reconnect();
     }
 }
