@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -41,7 +42,37 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implemen
 
             return order;
         }
-        
+
+        public async Task<QueuedOrders> CreateQueuedOrder(string symbol, string type, int quantity, RDSEnums.EnvironmentId environmentId, bool isOpenOrder, DateTime orderDate, int accountId)
+        {
+            QueuedOrders queuedOrder = new QueuedOrders()
+            {
+                Symbol = symbol,
+                OrderType = type,
+                EnvironmentId = environmentId,
+                IsOpenOrder = isOpenOrder,
+                Quantity = quantity,
+                OrderDate = orderDate,
+                UserId = accountId
+            };
+
+            _dbContext.QueuedOrders.Add(queuedOrder);
+            await _dbContext.SaveChangesAsync();
+
+            return queuedOrder;
+        }
+
+        public async Task<IEnumerable<QueuedOrders>> GetQueuedOrders(DateTime orderDate)
+        {
+            return _dbContext.QueuedOrders.Where(x => x.IsOpenOrder && x.OrderDate == orderDate).ToList();
+        }
+
+        public async Task<bool> MarketHolidayCheck()
+        {
+            var isHoliday = _dbContext.MarketHolidays.Any(x => x.HolidayDate == DateTime.Today);
+            return isHoliday;
+        }
+
         public async Task<Transactions> CreateTransaction(int accountId, RDSEnums.EnvironmentId environmentId,
             RDSEnums.OriginId originId)
         {

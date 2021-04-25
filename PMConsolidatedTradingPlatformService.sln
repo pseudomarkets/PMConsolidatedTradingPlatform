@@ -3,9 +3,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.29728.190
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PMConsolidatedTradingPlatformService", "PMConsolidatedTradingPlatformService\PMConsolidatedTradingPlatformService.csproj", "{DBEE5531-250B-4105-B11D-EC4FBB479EDD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PMConsolidatedTradingPlatformService", "PMConsolidatedTradingPlatformService\PMConsolidatedTradingPlatformService.csproj", "{DBEE5531-250B-4105-B11D-EC4FBB479EDD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PMConsolidatedTradingPlatform.Server.Core", "PMConsolidatedTradingPlatform.Server.Core\PMConsolidatedTradingPlatform.Server.Core.csproj", "{E5264F2E-6BAA-4A13-A782-93260CD91512}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PMConsolidatedTradingPlatform.Server.Core", "PMConsolidatedTradingPlatform.Server.Core\PMConsolidatedTradingPlatform.Server.Core.csproj", "{E5264F2E-6BAA-4A13-A782-93260CD91512}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PMConsolidatedTradingPlatformService.Console", "PMConsolidatedTradingPlatformService.Console\PMConsolidatedTradingPlatformService.Console.csproj", "{8F08BE1F-9A9D-4905-BE8E-EECB1A2016B1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PMConsolidatedTradingPlatform.Client.Core", "PMConsolidatedTradingPlatform.Client.Core\PMConsolidatedTradingPlatform.Client.Core.csproj", "{00AF493C-0D13-48C4-81B7-FB7C7EC80FA7}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +25,14 @@ Global
 		{E5264F2E-6BAA-4A13-A782-93260CD91512}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E5264F2E-6BAA-4A13-A782-93260CD91512}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E5264F2E-6BAA-4A13-A782-93260CD91512}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8F08BE1F-9A9D-4905-BE8E-EECB1A2016B1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8F08BE1F-9A9D-4905-BE8E-EECB1A2016B1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8F08BE1F-9A9D-4905-BE8E-EECB1A2016B1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8F08BE1F-9A9D-4905-BE8E-EECB1A2016B1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00AF493C-0D13-48C4-81B7-FB7C7EC80FA7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00AF493C-0D13-48C4-81B7-FB7C7EC80FA7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00AF493C-0D13-48C4-81B7-FB7C7EC80FA7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00AF493C-0D13-48C4-81B7-FB7C7EC80FA7}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

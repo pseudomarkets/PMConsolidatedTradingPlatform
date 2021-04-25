@@ -19,10 +19,22 @@ namespace PMConsolidatedTradingPlatformService
         
         public Worker(ILogger<TradingPlatformLogger> logger)
         {
-            _logger = logger;
-            
+            if (logger == null)
+            {
+                ILoggerFactory loggerFactory = new LoggerFactory();
+
+                _logger = loggerFactory.CreateLogger<TradingPlatformLogger>();
+            }
+            else
+            {
+                _logger = logger;
+            }
+
+            var location = System.Reflection.Assembly.GetEntryAssembly()?.Location;
+            var directoryPath = Path.GetDirectoryName(location);
+
             var configBuilder = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
+                .SetBasePath(directoryPath)
                 .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true).Build();
 
             _pmTradingService = new PseudoMarketsTradingService(configBuilder, _logger);

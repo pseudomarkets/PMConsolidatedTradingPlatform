@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using PMCommonEntities.Models.TradingPlatform;
 using PMConsolidatedTradingPlatform.Server.Core.Models;
 using PMUnifiedAPI.Models;
 

@@ -31,5 +31,12 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Interfac
         Task CreatePosition(Positions newPosition, Accounts account, double newBalance);
 
         Task DeleteInvalidOrder(Orders invalidOrder);
+
+        Task<QueuedOrders> CreateQueuedOrder(string symbol, string type, int quantity,
+            RDSEnums.EnvironmentId environmentId, bool isOpenOrder, DateTime orderDate, int accountId);
+
+        Task<IEnumerable<QueuedOrders>> GetQueuedOrders(DateTime orderDate);
+
+        Task<bool> MarketHolidayCheck();
     }
 }
