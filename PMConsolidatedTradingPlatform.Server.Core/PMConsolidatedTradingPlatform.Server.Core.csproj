@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
@@ -13,7 +13,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="5.0.0" />
     <PackageReference Include="NetMQ" Version="4.0.1.6" />
     <PackageReference Include="PMCommonApiModels" Version="1.0.4" />
-    <PackageReference Include="PMCommonEntities" Version="1.2.0" />
+    <PackageReference Include="PMCommonEntities" Version="1.2.1" />
     <PackageReference Include="PMMarketDataService.DataProvider.Client" Version="1.0.3" />
   </ItemGroup>
 

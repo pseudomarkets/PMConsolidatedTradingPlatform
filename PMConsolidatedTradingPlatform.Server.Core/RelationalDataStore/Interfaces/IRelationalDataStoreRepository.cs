@@ -17,8 +17,8 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Interfac
         Task UpdatePosition(Positions existingPosition, double newValue, int newQuantity, Accounts account,
             double newAccountBalance);
 
-        Task CreateQueuedOrder(TradeExecInput tradeInput, Accounts account);
         Task<Accounts> GetAccountUsingId(int accountId);
+
         Task<Transactions> CreateTransaction(int accountId, RDSEnums.EnvironmentId environmentId,
             RDSEnums.OriginId originId);
 
@@ -35,8 +35,18 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Interfac
         Task<QueuedOrders> CreateQueuedOrder(string symbol, string type, int quantity,
             RDSEnums.EnvironmentId environmentId, bool isOpenOrder, DateTime orderDate, int accountId);
 
-        Task<IEnumerable<QueuedOrders>> GetQueuedOrders(DateTime orderDate);
+        Task<IEnumerable<QueuedOrders>> GetAllQueuedOrders(DateTime orderDate);
+
+        Task CancelAllQueuedOrders(DateTime orderDate);
+
+        Task<IEnumerable<QueuedOrders>> GetQueuedOrders(IEnumerable<int> orderIds, DateTime orderDate);
+
+        Task CancelQueuedOrders(IEnumerable<int> orderIds, DateTime orderDate);
 
         Task<bool> MarketHolidayCheck();
+
+        Task<IEnumerable<QueuedOrders>> GetAndDrainAllQueuedOrders(DateTime orderDate);
+
+        Task<IEnumerable<QueuedOrders>> GetAndDrainQueuedOrders(IEnumerable<int> orderIds, DateTime orderDate);
     }
 }

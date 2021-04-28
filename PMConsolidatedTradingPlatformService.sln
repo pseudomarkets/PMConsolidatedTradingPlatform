@@ -7,9 +7,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PMConsolidatedTradingPlatfo
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PMConsolidatedTradingPlatform.Server.Core", "PMConsolidatedTradingPlatform.Server.Core\PMConsolidatedTradingPlatform.Server.Core.csproj", "{E5264F2E-6BAA-4A13-A782-93260CD91512}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PMConsolidatedTradingPlatformService.Console", "PMConsolidatedTradingPlatformService.Console\PMConsolidatedTradingPlatformService.Console.csproj", "{8F08BE1F-9A9D-4905-BE8E-EECB1A2016B1}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PMConsolidatedTradingPlatformService.Console", "PMConsolidatedTradingPlatformService.Console\PMConsolidatedTradingPlatformService.Console.csproj", "{8F08BE1F-9A9D-4905-BE8E-EECB1A2016B1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PMConsolidatedTradingPlatform.Client.Core", "PMConsolidatedTradingPlatform.Client.Core\PMConsolidatedTradingPlatform.Client.Core.csproj", "{00AF493C-0D13-48C4-81B7-FB7C7EC80FA7}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PMConsolidatedTradingPlatform.Client.Core", "PMConsolidatedTradingPlatform.Client.Core\PMConsolidatedTradingPlatform.Client.Core.csproj", "{00AF493C-0D13-48C4-81B7-FB7C7EC80FA7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PMConsolidatedTradingPlatformService.Api", "PMConsolidatedTradingPlatformService.Api\PMConsolidatedTradingPlatformService.Api.csproj", "{3900BA9E-4F09-437E-965B-FE214F3EAF97}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -33,6 +35,10 @@ Global
 		{00AF493C-0D13-48C4-81B7-FB7C7EC80FA7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{00AF493C-0D13-48C4-81B7-FB7C7EC80FA7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{00AF493C-0D13-48C4-81B7-FB7C7EC80FA7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3900BA9E-4F09-437E-965B-FE214F3EAF97}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3900BA9E-4F09-437E-965B-FE214F3EAF97}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3900BA9E-4F09-437E-965B-FE214F3EAF97}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3900BA9E-4F09-437E-965B-FE214F3EAF97}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

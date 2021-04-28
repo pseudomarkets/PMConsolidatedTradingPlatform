@@ -12,5 +12,13 @@ namespace PMConsolidatedTradingPlatform.Client.Core.Interfaces
         ConsolidatedTradeResponse GetTradeResponse();
 
         void Disconnect();
+
+        void DrainOpenOrders(IEnumerable<int> orderIds, DateTime date);
+
+        void CancelOpenOrders(IEnumerable<int> orderIds, DateTime date);
+
+        void DrainAllOpenOrders(DateTime date);
+
+        void CancelAllOpenOrders(DateTime date);
     }
 }

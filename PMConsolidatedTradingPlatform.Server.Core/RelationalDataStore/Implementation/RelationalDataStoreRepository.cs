@@ -62,15 +62,78 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implemen
             return queuedOrder;
         }
 
-        public async Task<IEnumerable<QueuedOrders>> GetQueuedOrders(DateTime orderDate)
+        public async Task<IEnumerable<QueuedOrders>> GetAllQueuedOrders(DateTime orderDate)
         {
             return _dbContext.QueuedOrders.Where(x => x.IsOpenOrder && x.OrderDate == orderDate).ToList();
+        }
+
+        public async Task CancelAllQueuedOrders(DateTime orderDate)
+        {
+            var orders = await GetAllQueuedOrders(orderDate);
+
+            foreach (var order in orders)
+            {
+                order.IsOpenOrder = false;
+
+                _dbContext.Entry(order).State = EntityState.Modified;
+            }
+
+            await _dbContext.SaveChangesAsync();
+        }
+
+        public async Task<IEnumerable<QueuedOrders>> GetQueuedOrders(IEnumerable<int> orderIds, DateTime orderDate)
+        {
+            var orders = _dbContext.QueuedOrders.Where(x => orderIds.Contains(x.Id) && x.OrderDate == orderDate).ToList();
+
+            return orders;
+        }
+
+        public async Task CancelQueuedOrders(IEnumerable<int> orderIds, DateTime orderDate)
+        {
+            var orders = await GetQueuedOrders(orderIds, orderDate);
+
+            foreach (var order in orders)
+            {
+                order.IsOpenOrder = false;
+
+                _dbContext.Entry(order).State = EntityState.Modified;
+            }
+
+            await _dbContext.SaveChangesAsync();
         }
 
         public async Task<bool> MarketHolidayCheck()
         {
             var isHoliday = _dbContext.MarketHolidays.Any(x => x.HolidayDate == DateTime.Today);
             return isHoliday;
+        }
+
+        public async Task<IEnumerable<QueuedOrders>> GetAndDrainAllQueuedOrders(DateTime orderDate)
+        {
+            var orders = _dbContext.QueuedOrders.ToList();
+
+            foreach (var order in orders)
+            {
+                _dbContext.Entry(order).State = EntityState.Deleted;
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return orders;
+        }
+
+        public async Task<IEnumerable<QueuedOrders>> GetAndDrainQueuedOrders(IEnumerable<int> orderIds, DateTime orderDate)
+        {
+            var orders = await GetQueuedOrders(orderIds, orderDate);
+
+            foreach (var order in orders)
+            {
+                _dbContext.Entry(order).State = EntityState.Deleted;
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return orders;
         }
 
         public async Task<Transactions> CreateTransaction(int accountId, RDSEnums.EnvironmentId environmentId,
@@ -134,11 +197,6 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implemen
         public async Task<Orders> GetOrderUsingTransactionId(string transactionId)
         {
             return _dbContext.Orders.FirstOrDefault(x => x.TransactionID == transactionId);
-        }
-
-        public async Task CreateQueuedOrder(TradeExecInput tradeInput, Accounts account)
-        {
-            throw new NotImplementedException();
         }
 
         public async Task<Accounts> GetAccountUsingId(int accountId)

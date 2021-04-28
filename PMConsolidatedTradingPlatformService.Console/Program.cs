@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using PMCommonEntities.Models.TradingPlatform;
 using PMConsolidatedTradingPlatform.Client.Core.Implementation;
 
@@ -17,6 +18,7 @@ namespace PMConsolidatedTradingPlatformService.Console
             System.Console.WriteLine("Connected to Trading Platform");
 
             System.Console.WriteLine("1. Send order");
+            System.Console.WriteLine("2. Drain all orders");
             System.Console.Write("Enter selection: ");
 
             var option = System.Console.ReadLine();
@@ -27,9 +29,27 @@ namespace PMConsolidatedTradingPlatformService.Console
                 case "1":
                     SendTradeRequestMenu(tradingClient);
                     break;
+                case "2":
+                    DrainAllOpenOrders(tradingClient);
+                    break;
                 default:
                     break;
             }
+        }
+
+        private static void DrainAllOpenOrders(TradingPlatformClient client)
+        {
+            System.Console.Write("Enter order date (yyyyMMdd): ");
+            var date = System.Console.ReadLine();
+
+            DateTime.TryParseExact(date, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None,
+                out var parsedDate);
+
+            client.DrainAllOpenOrders(parsedDate);
+
+            var response = client.GetTradeResponse();
+
+            System.Console.WriteLine("Drained orders");
         }
 
         private static void SendTradeRequestMenu(TradingPlatformClient client)
@@ -54,7 +74,8 @@ namespace PMConsolidatedTradingPlatformService.Console
                 OrderTiming = ConsolidatedTradeEnums.ConsolidatedOrderTiming.DayOnly,
                 OrderType = ConsolidatedTradeEnums.ConsolidatedOrderType.Market,
                 Quantity = int.Parse(quantity),
-                Symbol = symbol
+                Symbol = symbol,
+                EnforceMarketOpenCheck = true
             };
 
             client.SendTradeRequest(tradeRequest);

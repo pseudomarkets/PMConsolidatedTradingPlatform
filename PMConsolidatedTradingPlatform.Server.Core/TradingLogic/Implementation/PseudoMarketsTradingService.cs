@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -13,7 +14,6 @@ using PMConsolidatedTradingPlatform.Server.Core.Helpers;
 using PMConsolidatedTradingPlatform.Server.Core.Models;
 using PMConsolidatedTradingPlatform.Server.Core.NetMq.Implementation;
 using PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implementation;
-using PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Interfaces;
 using PMConsolidatedTradingPlatform.Server.Core.TradingExt;
 using PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Interfaces;
 using PMMarketDataService.DataProvider.Client.Implementation;
@@ -168,99 +168,99 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
             
             try
             {
-                if (order != null && order.IsOrderValid())
+                if (order != null)
                 {
-                    var account = await _relationalDataStoreRepository.GetAccountUsingId(order.AccountId);
-
-                    if (account != null)
+                    if(order.OrderDrainerMessage != null)
                     {
-                        var isMarketHoliday = await _relationalDataStoreRepository.MarketHolidayCheck();
-                        var quote = await _marketDataServiceClient.GetLatestPrice(order?.Symbol);
+                        var wasDrainerSuccess = await ProcessOrderDrainerMessage(order.OrderDrainerMessage);
 
-                        if (MarketOpenCheckHelper.IsMarketOpen(isMarketHoliday))
+                        if (wasDrainerSuccess)
                         {
-                            
-                            if (account.DoesAccountHaveSufficientFundsFor(order.Quantity, quote.price))
+                            response.StatusMessage = "Order(s) drained";
+                            response.StatusCode = ConsolidatedTradeEnums.TradeStatusCodes.ExecutionOk;
+                        }
+                        else
+                        {
+                            response.StatusMessage = "Could not drain order(s), check logs for more details";
+                            response.StatusCode = ConsolidatedTradeEnums.TradeStatusCodes.ExecutionError;
+                        }
+
+                        response.Order = default;
+                        return response;
+                    }
+
+                    if (order.IsOrderValid())
+                    {
+                        var account = await _relationalDataStoreRepository.GetAccountUsingId(order.AccountId);
+
+                        if (account != null)
+                        {
+                            var isMarketHoliday = await _relationalDataStoreRepository.MarketHolidayCheck();
+                            var quote = await _marketDataServiceClient.GetLatestPrice(order?.Symbol);
+
+                            if (order.EnforceMarketOpenCheck)
                             {
-                                var transaction = await _relationalDataStoreRepository.CreateTransaction(account.Id,
-                                    RDSEnums.EnvironmentId.ProductionPrimary, RDSEnums.OriginId.PseudoMarkets);
-
-                                _logger.LogInformation($"Transaction Created with ID: {transaction.TransactionId}");
-
-                                await _relationalDataStoreRepository.CreateOrder(order.Symbol, order.OrderAction,
-                                    quote.price, order.Quantity, DateTime.Now, transaction.TransactionId,
-                                    RDSEnums.EnvironmentId.ProductionPrimary, RDSEnums.OriginId.PseudoMarkets,
-                                    RDSEnums.SecurityType.RealWorld);
-
-                                _logger.LogInformation($"Order inserted into Relational Data Store");
-
-                                var orderFromTransactionId =
-                                    await _relationalDataStoreRepository.GetOrderUsingTransactionId(transaction.TransactionId);
-
-                                switch (order.OrderAction)
+                                if (MarketOpenCheckHelper.IsMarketOpen(isMarketHoliday))
                                 {
-                                    case "BUY":
-                                        _logger.LogInformation("Processing buy side order");
-                                        var buySideResult = await ProcessBuySideLegacyTransaction(account, orderFromTransactionId);
-                                        response.Order = buySideResult.Order;
-                                        response.StatusCode = buySideResult.StatusCode;
-                                        response.StatusMessage = buySideResult.Status;
-                                        return response;
-                                    case "SELL":
-                                        _logger.LogInformation("Processing sell side order");
-                                        var sellSideResult =
-                                            await ProcessSellSideLegacyTransaction(account, orderFromTransactionId);
-                                        response.Order = sellSideResult.Order;
-                                        response.StatusCode = sellSideResult.StatusCode;
-                                        response.StatusMessage = sellSideResult.Status;
-                                        return response;
-                                    case "SELLSHORT":
-                                        _logger.LogInformation("Processing short-sell side order");
-                                        var shortSellSideResult =
-                                            await ProcessShortSellSideLegacyTransaction(account, orderFromTransactionId);
-                                        response.Order = shortSellSideResult.Order;
-                                        response.StatusCode = shortSellSideResult.StatusCode;
-                                        response.StatusMessage = shortSellSideResult.Status;
-                                        return response;
-                                    default:
-                                        _logger.LogError($"Invalid order action {order.OrderAction}");
-                                        response.Order = default;
-                                        response.StatusMessage = StatusMessages.InvalidOrderTypeMessage;
+                                    if (account.DoesAccountHaveSufficientFundsFor(order.Quantity, quote.price))
+                                    {
+                                        response = await CreateTransactionAndProcessOrder(order, account, quote);
+                                    }
+                                    else
+                                    {
+                                        _logger.LogInformation($"Insufficient balance for Account ID: {account.Id} with balance of {account.Balance} and order value of {order.Quantity * quote.price}");
+                                        response.StatusMessage = StatusMessages.InsufficientBalanceMessage;
                                         response.StatusCode = ConsolidatedTradeEnums.TradeStatusCodes.ExecutionError;
-                                        return response;
+                                        response.Order = default;
+                                    }
+                                }
+                                else
+                                {
+                                    _logger.LogInformation("Market is closed, creating queued order now");
+                                    await _relationalDataStoreRepository.CreateQueuedOrder(order.Symbol, order.OrderAction,
+                                        order.Quantity, RDSEnums.EnvironmentId.ProductionPrimary, true, DateTime.Today,
+                                        order.AccountId);
+                                    response.StatusMessage = "Market is closed, order has been queued to be filled on next market open";
+                                    response.Order = default;
+                                    return response;
                                 }
                             }
                             else
                             {
-                                _logger.LogInformation("Market is closed, creating queued order now");
-                                await _relationalDataStoreRepository.CreateQueuedOrder(order.Symbol, order.OrderAction,
-                                    order.Quantity, RDSEnums.EnvironmentId.ProductionPrimary, true, DateTime.Today,
-                                    order.AccountId);
-                                response.StatusMessage = "Market is closed, order has been queued to be filled on next market open";
-                                response.Order = default;
-                                return response;
+                                if (account.DoesAccountHaveSufficientFundsFor(order.Quantity, quote.price))
+                                {
+                                    response = await CreateTransactionAndProcessOrder(order, account, quote);
+                                }
+                                else
+                                {
+                                    _logger.LogInformation($"Insufficient balance for Account ID: {account.Id} with balance of {account.Balance} and order value of {order.Quantity * quote.price}");
+                                    response.StatusMessage = StatusMessages.InsufficientBalanceMessage;
+                                    response.StatusCode = ConsolidatedTradeEnums.TradeStatusCodes.ExecutionError;
+                                    response.Order = default;
+                                }
                             }
+
                         }
                         else
                         {
-                            _logger.LogInformation($"Insufficient balance for Account ID: {account.Id} with balance of {account.Balance} and order value of {order.Quantity * quote.price}");
-                            response.StatusMessage = StatusMessages.InsufficientBalanceMessage;
+                            _logger.LogInformation("Failed to get account");
+                            response.StatusMessage = "Invalid account";
                             response.StatusCode = ConsolidatedTradeEnums.TradeStatusCodes.ExecutionError;
                             response.Order = default;
                         }
                     }
                     else
                     {
-                        _logger.LogInformation("Failed to get account");
-                        response.StatusMessage = "Invalid account";
+                        _logger.LogInformation("Trade rules validation failed for order");
+                        response.StatusMessage = $"{StatusMessages.InvalidSymbolOrQuantityMessage} and/or {StatusMessages.InvalidOrderTypeMessage}";
                         response.StatusCode = ConsolidatedTradeEnums.TradeStatusCodes.ExecutionError;
                         response.Order = default;
                     }
                 }
                 else
                 {
-                    _logger.LogInformation("Trade rules validation failed for order");
-                    response.StatusMessage = $"{StatusMessages.InvalidSymbolOrQuantityMessage} and/or {StatusMessages.InvalidOrderTypeMessage}";
+                    _logger.LogWarning("Order cannot be null");
+                    response.StatusMessage = StatusMessages.FailureMessage;
                     response.StatusCode = ConsolidatedTradeEnums.TradeStatusCodes.ExecutionError;
                     response.Order = default;
                 }
@@ -275,6 +275,136 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
             }
             
             return response;
+        }
+
+        private async Task<ConsolidatedTradeResponse> CreateTransactionAndProcessOrder(ConsolidatedTradeRequest order,
+            Accounts account, LatestPriceOutput quote)
+        {
+            ConsolidatedTradeResponse response = new ConsolidatedTradeResponse();
+
+            var transaction = await _relationalDataStoreRepository.CreateTransaction(account.Id,
+                RDSEnums.EnvironmentId.ProductionPrimary, RDSEnums.OriginId.PseudoMarkets);
+
+            _logger.LogInformation($"Transaction Created with ID: {transaction.TransactionId}");
+
+            await _relationalDataStoreRepository.CreateOrder(order.Symbol, order.OrderAction,
+                quote.price, order.Quantity, DateTime.Now, transaction.TransactionId,
+                RDSEnums.EnvironmentId.ProductionPrimary, RDSEnums.OriginId.PseudoMarkets,
+                RDSEnums.SecurityType.RealWorld);
+
+            _logger.LogInformation($"Order inserted into Relational Data Store");
+
+            var orderFromTransactionId =
+                await _relationalDataStoreRepository.GetOrderUsingTransactionId(transaction.TransactionId);
+
+            switch (order.OrderAction)
+            {
+                case "BUY":
+                    _logger.LogInformation("Processing buy side order");
+                    var buySideResult = await ProcessBuySideLegacyTransaction(account, orderFromTransactionId);
+                    response.Order = buySideResult.Order;
+                    response.StatusCode = buySideResult.StatusCode;
+                    response.StatusMessage = buySideResult.Status;
+                    return response;
+                case "SELL":
+                    _logger.LogInformation("Processing sell side order");
+                    var sellSideResult =
+                        await ProcessSellSideLegacyTransaction(account, orderFromTransactionId);
+                    response.Order = sellSideResult.Order;
+                    response.StatusCode = sellSideResult.StatusCode;
+                    response.StatusMessage = sellSideResult.Status;
+                    return response;
+                case "SELLSHORT":
+                    _logger.LogInformation("Processing short-sell side order");
+                    var shortSellSideResult =
+                        await ProcessShortSellSideLegacyTransaction(account, orderFromTransactionId);
+                    response.Order = shortSellSideResult.Order;
+                    response.StatusCode = shortSellSideResult.StatusCode;
+                    response.StatusMessage = shortSellSideResult.Status;
+                    return response;
+                default:
+                    _logger.LogError($"Invalid order action {order.OrderAction}");
+                    response.Order = default;
+                    response.StatusMessage = StatusMessages.InvalidOrderTypeMessage;
+                    response.StatusCode = ConsolidatedTradeEnums.TradeStatusCodes.ExecutionError;
+                    return response;
+            }
+        }
+
+        private async Task<bool> ProcessOrderDrainerMessage(OrderDrainerMessage drainerMessage)
+        {
+            try
+            {
+                if (drainerMessage.ProcessAllOrders)
+                {
+                    var orders = await _relationalDataStoreRepository.GetAndDrainAllQueuedOrders(drainerMessage.Date);
+
+                    if (!drainerMessage.IsOrderCanceled)
+                    {
+                        _logger.LogInformation("Draining all orders");
+                        foreach (var order in orders)
+                        {
+                            ConsolidatedTradeRequest tradeRequest = new ConsolidatedTradeRequest()
+                            {
+                                AccountId = order.UserId,
+                                EnforceMarketOpenCheck = false,
+                                OrderAction = order.OrderType,
+                                OrderOrigin = ConsolidatedTradeEnums.ConsolidatedOrderOrigin.PseudoMarkets,
+                                OrderTiming = ConsolidatedTradeEnums.ConsolidatedOrderTiming.DayOnly,
+                                Quantity = order.Quantity,
+                                Symbol = order.Symbol,
+                                OrderType = ConsolidatedTradeEnums.ConsolidatedOrderType.Market
+                            };
+
+                            await ProcessAndPostLegacyOrder(tradeRequest);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Cancelling all orders");
+                        await _relationalDataStoreRepository.CancelAllQueuedOrders(drainerMessage.Date);
+                    }
+                }
+                else
+                {
+                    var orders = await
+                        _relationalDataStoreRepository.GetAndDrainQueuedOrders(drainerMessage.OrderIds, drainerMessage.Date);
+
+                    if (!drainerMessage.IsOrderCanceled)
+                    {
+                        _logger.LogInformation("Draining select orders");
+                        foreach (var order in orders)
+                        {
+                            ConsolidatedTradeRequest tradeRequest = new ConsolidatedTradeRequest()
+                            {
+                                AccountId = order.UserId,
+                                EnforceMarketOpenCheck = false,
+                                OrderAction = order.OrderType,
+                                OrderOrigin = ConsolidatedTradeEnums.ConsolidatedOrderOrigin.PseudoMarkets,
+                                OrderTiming = ConsolidatedTradeEnums.ConsolidatedOrderTiming.DayOnly,
+                                Quantity = order.Quantity,
+                                Symbol = order.Symbol,
+                                OrderType = ConsolidatedTradeEnums.ConsolidatedOrderType.Market
+                            };
+
+                            await ProcessAndPostLegacyOrder(tradeRequest);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation("Cancelling select orders");
+                        await _relationalDataStoreRepository.CancelQueuedOrders(drainerMessage.OrderIds,
+                            drainerMessage.Date);
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error while draining orders");
+                return false;
+            }
         }
 
         private async Task<(Orders Order, string Status, ConsolidatedTradeEnums.TradeStatusCodes StatusCode)> ProcessBuySideLegacyTransaction(Accounts account, Orders order)

@@ -3,20 +3,20 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <PackageId>PMConsolidatedTradingPlatform.Client.Core</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Authors>Shravan Jambukesan</Authors>
     <Company>Pseudo Markets</Company>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Description>.NET Standard client for connecting to the Pseudo Markets Consolidated Trading Platform</Description>
     <Copyright>(c) 2021 Pseudo Markets</Copyright>
     <PackageProjectUrl>https://github.com/pseudomarkets/PMConsolidatedTradingPlatform</PackageProjectUrl>
-    <PackageReleaseNotes>* Initial release</PackageReleaseNotes>
+    <PackageReleaseNotes>* Added Order Drainer support</PackageReleaseNotes>
     <PackageTags>pseudo markets</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="NetMQ" Version="4.0.1.6" />
-    <PackageReference Include="PMCommonEntities" Version="1.2.0" />
+    <PackageReference Include="PMCommonEntities" Version="1.2.1" />
   </ItemGroup>
 
 </Project>

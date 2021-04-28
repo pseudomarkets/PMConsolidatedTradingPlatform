@@ -6,11 +6,11 @@ using NetMQ;
 using NetMQ.Sockets;
 using PMCommonEntities.Models.TradingPlatform;
 using PMConsolidatedTradingPlatform.Client.Core.Interfaces;
-using PMConsolidatedTradingPlatform.Client.Core.Models;
+
 
 namespace PMConsolidatedTradingPlatform.Client.Core.Implementation
 {
-    public class TradingPlatformClient : ITradingPlatformClient, IOrderDrainerClient
+    public class TradingPlatformClient : ITradingPlatformClient
     {
         private RequestSocket _netMqConnection;
         private readonly string _netMqConnectionString;
@@ -60,7 +60,8 @@ namespace PMConsolidatedTradingPlatform.Client.Core.Implementation
             {
                 Date = date,
                 IsOrderCanceled = false,
-                OrderIds = orderIds
+                OrderIds = orderIds,
+                ProcessAllOrders = false
             };
 
             SendMessage(drainerMessage);
@@ -72,10 +73,52 @@ namespace PMConsolidatedTradingPlatform.Client.Core.Implementation
             {
                 Date = date,
                 IsOrderCanceled = true,
-                OrderIds = orderIds
+                OrderIds = orderIds,
+                ProcessAllOrders = false
             };
 
-            SendMessage(drainerMessage);
+            ConsolidatedTradeRequest tradeRequest = new ConsolidatedTradeRequest()
+            {
+                OrderDrainerMessage = drainerMessage
+            };
+
+            SendTradeRequest(tradeRequest);
+        }
+
+        public void DrainAllOpenOrders(DateTime date)
+        {
+            OrderDrainerMessage drainerMessage = new OrderDrainerMessage()
+            {
+                Date = date,
+                IsOrderCanceled = false,
+                OrderIds = default,
+                ProcessAllOrders = true
+            };
+
+            ConsolidatedTradeRequest tradeRequest = new ConsolidatedTradeRequest()
+            {
+                OrderDrainerMessage = drainerMessage
+            };
+
+            SendTradeRequest(tradeRequest);
+        }
+
+        public void CancelAllOpenOrders(DateTime date)
+        {
+            OrderDrainerMessage drainerMessage = new OrderDrainerMessage()
+            {
+                Date = date,
+                IsOrderCanceled = true,
+                OrderIds = default,
+                ProcessAllOrders = true
+            };
+
+            ConsolidatedTradeRequest tradeRequest = new ConsolidatedTradeRequest()
+            {
+                OrderDrainerMessage = drainerMessage
+            };
+
+            SendTradeRequest(tradeRequest);
         }
     }
 }
