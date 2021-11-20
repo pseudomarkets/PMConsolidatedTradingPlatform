@@ -1,4 +1,4 @@
-namespace PMConsolidatedTradingPlatform.Server.Core.Models
+namespace PMConsolidatedTradingPlatform.Server.Core.Logging
 {
     public class TradingPlatformLogger
     {

@@ -1,18 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using PMCommonApiModels.RequestModels;
 using PMCommonEntities.Models;
 using PMConsolidatedTradingPlatform.Server.Core.Models;
 using PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Interfaces;
-using PMConsolidatedTradingPlatform.Server.Core.TradingExt;
 using PMUnifiedAPI.Models;
 
-namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implementation
+namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implementations
 {
     public class RelationalDataStoreRepository : IRelationalDataStoreRepository
     {
@@ -134,6 +130,34 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implemen
             await _dbContext.SaveChangesAsync();
 
             return orders;
+        }
+
+        public async Task<IEnumerable<TradeLots>> GetTradeLots(Accounts account, string symbol)
+        {
+            var position = await CheckAndGetExistingPosition(account, symbol);
+
+            var tradeLots = await _dbContext.TradeLots.Where(x => x.AccountId == account.Id && x.PositionId == position.Id).ToListAsync();
+
+            return tradeLots;
+        }
+
+        public async Task CreateTradeLot(Positions position, RDSEnums.TradeSide tradeSide, bool isLiquidatingPosition, double tradePrice, double tradeQuantity)
+        {
+            var tradeLot = new TradeLots()
+            {
+                AccountId = position.AccountId,
+                EnvironmentId = RDSEnums.EnvironmentId.ProductionPrimary,
+                IsLiquidatingPosition = isLiquidatingPosition,
+                PositionId = position.Id,
+                TradeDate = DateTime.Today,
+                TradePrice = tradePrice,
+                TradeQuantity = tradeQuantity,
+                TradeSide = tradeSide
+            };
+
+            _dbContext.TradeLots.Add(tradeLot);
+
+            await _dbContext.SaveChangesAsync();
         }
 
         public async Task<Transactions> CreateTransaction(int accountId, RDSEnums.EnvironmentId environmentId,

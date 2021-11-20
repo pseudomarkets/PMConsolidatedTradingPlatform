@@ -1,12 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using MessagePack;
+﻿using MessagePack;
 using NetMQ;
 using NetMQ.Sockets;
 using PMConsolidatedTradingPlatform.Server.Core.NetMq.Interfaces;
 
-namespace PMConsolidatedTradingPlatform.Server.Core.NetMq.Implementation
+namespace PMConsolidatedTradingPlatform.Server.Core.NetMq.Implementations
 {
     public class NetMqService : INetMqService
     {

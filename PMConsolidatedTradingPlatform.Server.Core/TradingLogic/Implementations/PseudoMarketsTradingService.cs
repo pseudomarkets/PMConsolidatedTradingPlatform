@@ -1,7 +1,7 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -9,25 +9,38 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PMCommonApiModels.ResponseModels;
 using PMCommonEntities.Models;
+using PMCommonEntities.Models.PseudoMarkets;
 using PMCommonEntities.Models.TradingPlatform;
+using PMConsolidatedTradingPlatform.Server.Core.CostBasisService.Implementations;
+using PMConsolidatedTradingPlatform.Server.Core.CostBasisService.Interfaces;
 using PMConsolidatedTradingPlatform.Server.Core.Helpers;
+using PMConsolidatedTradingPlatform.Server.Core.Logging;
 using PMConsolidatedTradingPlatform.Server.Core.Models;
-using PMConsolidatedTradingPlatform.Server.Core.NetMq.Implementation;
-using PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implementation;
-using PMConsolidatedTradingPlatform.Server.Core.TradingExt;
+using PMConsolidatedTradingPlatform.Server.Core.NetMq.Implementations;
+using PMConsolidatedTradingPlatform.Server.Core.RealTimeDataStore.DbContext.Implementations;
+using PMConsolidatedTradingPlatform.Server.Core.RealTimeDataStore.DbContext.Interfaces;
+using PMConsolidatedTradingPlatform.Server.Core.RealTimeDataStore.Repository.Implementations;
+using PMConsolidatedTradingPlatform.Server.Core.RealTimeDataStore.Repository.Interfaces;
+using PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Implementations;
+using PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Interfaces;
 using PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Interfaces;
 using PMMarketDataService.DataProvider.Client.Implementation;
+using PMConsolidatedTradingPlatform.Server.Core.TradingExt;
 using PMUnifiedAPI.Models;
 
-namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
+namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementations
 {
     public class PseudoMarketsTradingService : IPseudoMarketsTradingLogic
     {
         private MarketDataServiceClient _marketDataServiceClient;
         private NetMqService _netMqService;
-        private RelationalDataStoreRepository _relationalDataStoreRepository;
+        private readonly IRelationalDataStoreRepository _relationalDataStoreRepository;
+        private readonly ICostBasisCalcService _costBasisService;
         private ConsolidatedTradeEnums.DataStore _dataStore;
         private readonly ILogger<TradingPlatformLogger> _logger;
+        private readonly IRealTimeDbContext _realTimeDbContext;
+        private readonly IExtendedTransactionsRepository _extendedTransactionsRepository;
+        private readonly string _serviceUser;
 
         public PseudoMarketsTradingService(IConfigurationRoot config, ILogger<TradingPlatformLogger>? logger)
         {
@@ -67,13 +80,34 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
                     Enum.Parse<ConsolidatedTradeEnums.DataStore>(tradingPlatformConfig.GetSection("ServiceConfig:OrderPosting")
                         ?.Value);
 
+                var realTimeDataStoreHost = tradingPlatformConfig.GetSection("RealTimeDataStore:Host")?.Value;
+
+                _realTimeDbContext =
+                    new RealTimeDbContext(realTimeDataStoreHost,
+                        Convert.ToInt32(tradingPlatformConfig.GetSection("RealTimeDataStore:Port")?.Value));
+
+                if (_realTimeDbContext.IsConnected())
+                {
+                    _logger.LogInformation($"Connected to Real Time Data Store via connection {realTimeDataStoreHost}");
+                    _extendedTransactionsRepository = new ExtendedTransactionsRepository(_realTimeDbContext);
+                }
+
                 var services = ConfigureServices(new ServiceCollection(), tradingPlatformConfig.GetSection("RelationalDataStore:PseudoMarketsDb")?.Value, _dataStore);
 
                 var context = services.GetService<PseudoMarketsDbContext>();
 
                 _relationalDataStoreRepository = new RelationalDataStoreRepository(context);
+                _costBasisService = new CostBasisCalcService(_relationalDataStoreRepository);
+
+                _serviceUser = tradingPlatformConfig.GetSection("ServiceConfig:AppName")?.Value;
+
+                if (string.IsNullOrEmpty(_serviceUser))
+                {
+                    _serviceUser = "Pseudo Markets Trading Platform Service";
+                }
 
                 _logger.LogInformation("Services configured");
+                _logger.LogInformation("Ready to accept orders");
             }
             catch (Exception e)
             {
@@ -91,7 +125,6 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
                 {
                     case ConsolidatedTradeEnums.DataStore.Legacy:
                         services.AddDbContext<PseudoMarketsDbContext>(options => options.UseSqlServer(connectionString));
-
                         serviceProvider = services.BuildServiceProvider();
 
                         _logger.LogInformation($"Connected to Relational Data Store via connection {connectionString}");
@@ -301,7 +334,7 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
             {
                 case "BUY":
                     _logger.LogInformation("Processing buy side order");
-                    var buySideResult = await ProcessBuySideLegacyTransaction(account, orderFromTransactionId);
+                    var buySideResult = await ProcessBuySideLegacyTransaction(account, orderFromTransactionId, transaction.TransactionId, quote.source);
                     response.Order = buySideResult.Order;
                     response.StatusCode = buySideResult.StatusCode;
                     response.StatusMessage = buySideResult.Status;
@@ -309,7 +342,7 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
                 case "SELL":
                     _logger.LogInformation("Processing sell side order");
                     var sellSideResult =
-                        await ProcessSellSideLegacyTransaction(account, orderFromTransactionId);
+                        await ProcessSellSideLegacyTransaction(account, orderFromTransactionId, transaction.TransactionId, quote.source);
                     response.Order = sellSideResult.Order;
                     response.StatusCode = sellSideResult.StatusCode;
                     response.StatusMessage = sellSideResult.Status;
@@ -317,7 +350,7 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
                 case "SELLSHORT":
                     _logger.LogInformation("Processing short-sell side order");
                     var shortSellSideResult =
-                        await ProcessShortSellSideLegacyTransaction(account, orderFromTransactionId);
+                        await ProcessShortSellSideLegacyTransaction(account, orderFromTransactionId, transaction.TransactionId, quote.source);
                     response.Order = shortSellSideResult.Order;
                     response.StatusCode = shortSellSideResult.StatusCode;
                     response.StatusMessage = shortSellSideResult.Status;
@@ -407,7 +440,7 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
             }
         }
 
-        private async Task<(Orders Order, string Status, ConsolidatedTradeEnums.TradeStatusCodes StatusCode)> ProcessBuySideLegacyTransaction(Accounts account, Orders order)
+        private async Task<(Orders Order, string Status, ConsolidatedTradeEnums.TradeStatusCodes StatusCode)> ProcessBuySideLegacyTransaction(Accounts account, Orders order, string transactionId, string source)
         {
             // Check if account is holding an existing position
             var existingPosition = await _relationalDataStoreRepository.CheckAndGetExistingPosition(account, order.Symbol);
@@ -422,10 +455,39 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
                     var newValue = existingPosition.Value + orderValue;
                     var newQuantity = existingPosition.Quantity + order.Quantity;
 
+                    var startingBalance = account.Balance;
+
                     var newBalance = account.Balance - orderValue;
 
                     await _relationalDataStoreRepository.UpdatePosition(existingPosition, newValue, newQuantity,
                         account, newBalance);
+
+                    await _relationalDataStoreRepository.CreateTradeLot(existingPosition, RDSEnums.TradeSide.BuySide,
+                        false, order.Price, order.Quantity);
+
+                    // Extended transaction data
+                    var extendedTransaction = new ExtendedTransaction()
+                    {
+                        TransactionId = transactionId,
+                        Symbol = order.Symbol,
+                        TradeSide = RDSEnums.TradeSide.BuySide,
+                        Quantity = order.Quantity,
+                        ExecutionPrice = order.Price,
+                        SecurityType = RDSEnums.SecurityType.RealWorld,
+                        OriginId = RDSEnums.OriginId.PseudoMarkets,
+                        AccountId = account.Id,
+                        ExecutionTimestamp = DateTime.Now,
+                        ServiceUser = _serviceUser,
+                        CreditOrDebit = "DEBIT",
+                        TransactionType = TransactionType.BuySideRealWorldEquityTransaction,
+                        TransactionDescription = $"EXISTING LONG POS BUY SIDE TRAN",
+                        AccountStartingBalance = startingBalance,
+                        AccountEndingBalance = newBalance,
+                        IsTradingTransaction = true,
+                        MarketDataSource = source
+                    };
+
+                    _extendedTransactionsRepository.UpsertTransaction(extendedTransaction);
 
                     return (order, StatusMessages.SuccessMessage, ConsolidatedTradeEnums.TradeStatusCodes.ExecutionOk);
                 }
@@ -437,19 +499,76 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
                     if (Math.Abs(existingPosition.Quantity) == order.Quantity)
                     {
                         var gainOrLoss = existingPosition.Value - orderValue;
+                        var startingBalance = account.Balance;
                         var newBalance = account.Balance += gainOrLoss;
 
                         await _relationalDataStoreRepository.LiquidatePosition(existingPosition, account, newBalance);
+
+                        await _relationalDataStoreRepository.CreateTradeLot(existingPosition,
+                            RDSEnums.TradeSide.ShortSellSide, true, order.Price, order.Quantity);
+
+                        // Extended transaction data
+                        var extendedTransaction = new ExtendedTransaction()
+                        {
+                            TransactionId = transactionId,
+                            Symbol = order.Symbol,
+                            TradeSide = RDSEnums.TradeSide.BuySide,
+                            Quantity = order.Quantity,
+                            ExecutionPrice = order.Price,
+                            SecurityType = RDSEnums.SecurityType.RealWorld,
+                            OriginId = RDSEnums.OriginId.PseudoMarkets,
+                            AccountId = account.Id,
+                            ExecutionTimestamp = DateTime.Now,
+                            ServiceUser = _serviceUser,
+                            CreditOrDebit = "CREDIT",
+                            TransactionType = TransactionType.BuySideRealWorldEquityTransaction,
+                            TransactionDescription = $"LIQ SHORT POS BUY SIDE TRAN",
+                            AccountStartingBalance = startingBalance,
+                            AccountEndingBalance = newBalance,
+                            IsTradingTransaction = true,
+                            MarketDataSource = source
+                        };
+
+                        _extendedTransactionsRepository.UpsertTransaction(extendedTransaction);
+
                     }
                     // Buying back shares to reduce stake in short position
                     else
                     {
                         var gainOrLoss = existingPosition.Value - orderValue;
+                        var startingBalance = account.Balance;
                         var newBalance = account.Balance += gainOrLoss;
                         var newQuantity = existingPosition.Quantity + order.Quantity;
 
                         await _relationalDataStoreRepository.UpdatePosition(existingPosition, gainOrLoss, newQuantity,
                             account, newBalance);
+
+                        await _relationalDataStoreRepository.CreateTradeLot(existingPosition,
+                            RDSEnums.TradeSide.BuySide, false, order.Price, order.Quantity);
+
+                        // Extended transaction data
+                        var extendedTransaction = new ExtendedTransaction()
+                        {
+                            TransactionId = transactionId,
+                            Symbol = order.Symbol,
+                            TradeSide = RDSEnums.TradeSide.BuySide,
+                            Quantity = order.Quantity,
+                            ExecutionPrice = order.Price,
+                            SecurityType = RDSEnums.SecurityType.RealWorld,
+                            OriginId = RDSEnums.OriginId.PseudoMarkets,
+                            AccountId = account.Id,
+                            ExecutionTimestamp = DateTime.Now,
+                            ServiceUser = _serviceUser,
+                            CreditOrDebit = "CREDIT",
+                            TransactionType = TransactionType.BuySideRealWorldEquityTransaction,
+                            TransactionDescription = $"REDUCE SHARES SHORT POS BUY SIDE TRAN",
+                            AccountStartingBalance = account.Balance,
+                            AccountEndingBalance = newBalance,
+                            IsTradingTransaction = true,
+                            MarketDataSource = source
+                        };
+
+                        _extendedTransactionsRepository.UpsertTransaction(extendedTransaction);
                     }
                     
                     return (order, StatusMessages.SuccessMessage, ConsolidatedTradeEnums.TradeStatusCodes.ExecutionOk);
@@ -459,28 +578,59 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
                 await _relationalDataStoreRepository.DeleteInvalidOrder(order);
                 return (default, StatusMessages.InvalidOrderTypeMessage, ConsolidatedTradeEnums.TradeStatusCodes.ExecutionError);
             }
-            
-            // New position
-            Positions position = new Positions
+            else
             {
-                AccountId = account.Id,
-                OrderId = order.Id,
-                Value = orderValue,
-                Symbol = order.Symbol,
-                Quantity = order.Quantity,
-                EnvironmentId = RDSEnums.EnvironmentId.ProductionPrimary,
-                OriginId = RDSEnums.OriginId.PseudoMarkets,
-                SecurityTypeId = RDSEnums.SecurityType.RealWorld
-            };
+                // New position
+                Positions position = new Positions
+                {
+                    AccountId = account.Id,
+                    OrderId = order.Id,
+                    Value = orderValue,
+                    Symbol = order.Symbol,
+                    Quantity = order.Quantity,
+                    EnvironmentId = RDSEnums.EnvironmentId.ProductionPrimary,
+                    OriginId = RDSEnums.OriginId.PseudoMarkets,
+                    SecurityTypeId = RDSEnums.SecurityType.RealWorld
+                };
 
-            var balance = account.Balance - orderValue;
+                var startingBalance = account.Balance;
+                var balance = account.Balance - orderValue;
 
-            await _relationalDataStoreRepository.CreatePosition(position, account, balance);
+                await _relationalDataStoreRepository.CreatePosition(position, account, balance);
 
-            return (order, StatusMessages.SuccessMessage, ConsolidatedTradeEnums.TradeStatusCodes.ExecutionOk);
+                await _relationalDataStoreRepository.CreateTradeLot(position, RDSEnums.TradeSide.BuySide, false, order.Price,
+                    order.Quantity);
+
+                // Extended transaction data
+                var extendedTransaction = new ExtendedTransaction()
+                {
+                    TransactionId = transactionId,
+                    Symbol = order.Symbol,
+                    TradeSide = RDSEnums.TradeSide.BuySide,
+                    Quantity = order.Quantity,
+                    ExecutionPrice = order.Price,
+                    SecurityType = RDSEnums.SecurityType.RealWorld,
+                    OriginId = RDSEnums.OriginId.PseudoMarkets,
+                    AccountId = account.Id,
+                    ExecutionTimestamp = DateTime.Now,
+                    ServiceUser = _serviceUser,
+                    CreditOrDebit = "DEBIT",
+                    TransactionType = TransactionType.BuySideRealWorldEquityTransaction,
+                    TransactionDescription = $"NEW LONG POS BUY SIDE TRAN",
+                    AccountStartingBalance = startingBalance,
+                    AccountEndingBalance = balance,
+                    IsTradingTransaction = true,
+                    MarketDataSource = source
+                };
+
+                _extendedTransactionsRepository.UpsertTransaction(extendedTransaction);
+
+                return (order, StatusMessages.SuccessMessage, ConsolidatedTradeEnums.TradeStatusCodes.ExecutionOk);
+            }
+            
         }
 
-        private async Task<(Orders Order, string Status, ConsolidatedTradeEnums.TradeStatusCodes StatusCode)> ProcessSellSideLegacyTransaction(Accounts account, Orders order)
+        private async Task<(Orders Order, string Status, ConsolidatedTradeEnums.TradeStatusCodes StatusCode)> ProcessSellSideLegacyTransaction(Accounts account, Orders order, string transactionId, string source)
         {
             // Check if account is holding an existing position
             var existingPosition = await _relationalDataStoreRepository.CheckAndGetExistingPosition(account, order.Symbol);
@@ -490,11 +640,26 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
             // Existing position
             if (existingPosition != null)
             {
+                var tradeLots = await _relationalDataStoreRepository.GetTradeLots(account, existingPosition.Symbol);
+
                 // Liquidating long position
                 if (existingPosition.IsLiquidatingPosition(order.Quantity))
                 {
-                    var balance = account.Balance + marketValue;
+                    double balance = 0;
+
+                    if (tradeLots != null && tradeLots.Any())
+                    {
+                        balance =  account.Balance + _costBasisService.CalculateTradeValueUsingFifoCostBasis(tradeLots, order.CalculateOrderMarketValue());
+                    }
+                    else
+                    {
+                        balance = account.Balance + marketValue;
+                    }
+
                     await _relationalDataStoreRepository.LiquidatePosition(existingPosition, account, balance);
+
+                    await _relationalDataStoreRepository.CreateTradeLot(existingPosition, RDSEnums.TradeSide.SellSide,
+                        true, order.Price, order.Quantity);
 
                     return (order, StatusMessages.SuccessMessage, ConsolidatedTradeEnums.TradeStatusCodes.ExecutionOk);
                 }
@@ -502,10 +667,23 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
                 // Sell shares to reduce stake in long position
                 var newValue = existingPosition.Value -= marketValue;
                 var newQuantity = existingPosition.Quantity -= order.Quantity;
-                var newBalance = account.Balance + marketValue;
+
+                double newBalance = 0;
+
+                if (tradeLots != null && tradeLots.Any())
+                {
+                    newBalance = account.Balance + _costBasisService.CalculateTradeValueUsingFifoCostBasis(tradeLots, order.CalculateOrderMarketValue());
+                }
+                else
+                {
+                    newBalance = account.Balance + marketValue;
+                }
 
                 await _relationalDataStoreRepository.UpdatePosition(existingPosition, newValue, newQuantity,
                     account, newBalance);
+
+                await _relationalDataStoreRepository.CreateTradeLot(existingPosition, RDSEnums.TradeSide.SellSide,
+                    false, order.Price, order.Quantity);
 
                 return (order, StatusMessages.SuccessMessage, ConsolidatedTradeEnums.TradeStatusCodes.ExecutionOk);
             }
@@ -517,7 +695,7 @@ namespace PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation
             }
         }
 
-        private async Task<(Orders Order, string Status, ConsolidatedTradeEnums.TradeStatusCodes StatusCode)>  ProcessShortSellSideLegacyTransaction(Accounts account, Orders order)
+        private async Task<(Orders Order, string Status, ConsolidatedTradeEnums.TradeStatusCodes StatusCode)>  ProcessShortSellSideLegacyTransaction(Accounts account, Orders order, string transactionId, string source)
         {
             // Check if account is holding an existing position
             var existingPosition = await _relationalDataStoreRepository.CheckAndGetExistingPosition(account, order.Symbol);

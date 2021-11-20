@@ -48,5 +48,9 @@ namespace PMConsolidatedTradingPlatform.Server.Core.RelationalDataStore.Interfac
         Task<IEnumerable<QueuedOrders>> GetAndDrainAllQueuedOrders(DateTime orderDate);
 
         Task<IEnumerable<QueuedOrders>> GetAndDrainQueuedOrders(IEnumerable<int> orderIds, DateTime orderDate);
+
+        Task<IEnumerable<TradeLots>> GetTradeLots(Accounts account, string symbol);
+
+        Task CreateTradeLot(Positions position, RDSEnums.TradeSide tradeSide, bool isLiquidatingPosition, double tradePrice, double tradeQuantity);
     }
 }

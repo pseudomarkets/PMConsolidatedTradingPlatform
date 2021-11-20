@@ -7,8 +7,9 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using PMConsolidatedTradingPlatform.Server.Core.Logging;
 using PMConsolidatedTradingPlatform.Server.Core.Models;
-using PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementation;
+using PMConsolidatedTradingPlatform.Server.Core.TradingLogic.Implementations;
 
 namespace PMConsolidatedTradingPlatformService
 {

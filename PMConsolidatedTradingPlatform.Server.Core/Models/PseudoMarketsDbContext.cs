@@ -23,5 +23,6 @@ namespace PMConsolidatedTradingPlatform.Server.Core.Models
         public DbSet<Transactions> Transactions { get; set; }
         public DbSet<QueuedOrders> QueuedOrders { get; set; }
         public DbSet<MarketHolidays> MarketHolidays { get; set; }
+        public DbSet<TradeLots> TradeLots { get; set; }
     }
 }
